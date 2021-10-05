@@ -1,32 +1,21 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useReducer, useMemo } from 'react';
 import UserList from './UserList';
 import CreateUser from './CreateUser'
+import produce from 'immer';
 
 function countActiveUsers(users) {
   console.log('활성 사용자 수를 세는 중...');
   return users.filter(user => user.active).length;
 }
 
-function App() {
-  const [inputs, setInputs] = useState({
+//useReducer의 초기값
+const initialState = {
+  inputs: { //inputs와 관련된 초기값
     username: '',
     email: ''
-  });
+  },
 
-  const { username, email } = inputs;
-
-  const onChange = e => {
-    const { name, value } = e.target;
-    setInputs({
-      ...inputs,
-      [name]: value
-    });
-  }
-
-  //리액트는 배열이나 객체에 변화를 줄 때 '불변성'을 지켜주어야 함 (안그러면 컴포넌트를 최적화할 수 없기 때문)
-  //방법1) spread 연산자 사용 (...)
-  //방법2) concat 함수 사용 -> 배열에 값을 추가하는 것이 아닌, 배열을 새롭게 생성함
-  const [users, setUsers] = useState([
+  users: [  //users와 관련된 초기값
     {
       id: 1,
       username: 'likelion',
@@ -45,53 +34,80 @@ function App() {
       email: 'react@example.com',
       active: false
     }
-  ]);
+  ]
+};
 
-  const nextId = useRef(4);
+function reducer(state, action) {
+  switch (action.type) {
+    case 'CREATE_USER':
+      //users: state.users.concat(action.user) 대신 immer 사용
+      return produce(state, draft => {
+        draft.users.push(action.user);
+      });
+
+    case 'TOGGLE_USER':
+      //users: state.users.map(user =>
+      //user.id === action.id ? { ...user, active: !user.active } : user  //action.id의 active를 반대로 바꿈 (user 내용 복사한채 active 내용만 바꿈)
+      //)
+      //대신 immer 사용
+      return produce(state, draft => {
+        const user = draft.users.find(user => user.id === action.id);
+        user.active = !user.active;
+      });
+      
+    case 'REMOVE_USER':
+      //users: state.users.filter(user => user.id !== action.id)
+      return produce(state, draft => {
+        const index = draft.users.findIndex(user => user.id === action.id);
+        draft.users.splice(index, 1);
+      });
+
+    default:
+      return state;
+  }
+}
+
+export const UserDispatch = React.createContext(null);  //UserDispatch라는 이름으로 내보내준다.
+
+function App() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  //const { username, email } = state.inputs; //state 안에 input 객체 안에 username, email 필드를 쓰겠다!
+  //위에 코드 대신 아래의 커스텀 훅을 사용
+  //const [{ username, email}, onChange, onReset] = useInputs({
+  //  //초기값을 매개변수로 줌
+  //  username: '',
+  //  email: ''
+  //});
+
+  //const [state, dispatch] = useReducer(reducer, initialState);
+
+  //const nextId = useRef(4); //static 느낌 정도..? 변화가 일어나도 새로고침되지 않고 값이 유지됨
+
+  const { users } = state;  //state 안에 users 객체를 쓰겠다! (안에 있는 id, email, active는 하나하나씩 안쓸거임)
   
-  const onCreate = () => {
-    //1. 새로운 객체 생성
-    const user = {
-      id: nextId.current,
-      username,
-      email
-    }
+  // const onCreate = useCallback(() => {
+  //   dispatch({
+  //     type: 'CREATE_USER',
+  //     user: {
+  //       id: nextId.current,
+  //       username,
+  //       email
+  //     }
+  //   });
 
-    //2. users에 새로 만든 객체 추가
-    setUsers([ ...users, user ]);  //spread 연산자 사용하는 방법
-    //setInputs(users.concat(user));  //concat 함수 사용하는 방법
+  //   onReset();
 
-    //3. 입력란 초기화
-    setInputs({
-      username: '',
-      email: ''
-    });
-
-    //4. id 다음 값으로 이동
-    nextId.current += 1;  
-  }
-
-  const onRemove = id => {
-    //user.id 가 파라미터로 일치하지 않는 원소만 추출해서 새로운 배열을 만들기
-    setUsers(users.filter(user => user.id !== id));
-  }
-
-  const onToggle = id => {
-    setUsers(
-      users.map(user =>
-        user.id === id ? { ...user, active: !user.active } : user
-      )
-    );
-  };
+  //   nextId.current += 1;  
+  // }, [username, email, onReset]);
 
   const count = useMemo(() => countActiveUsers(users), [users]);
 
   return (
-    <>
-      <CreateUser username={username} email={email} onChange={onChange} onCreate={onCreate}/>
-      <UserList users={users} onRemove={onRemove} onToggle={onToggle}/>
+    <UserDispatch.Provider value={dispatch}>
+      <CreateUser />
+      <UserList users={users}/>
       <div>활성 사용자 수: {count}</div>
-    </>
+    </UserDispatch.Provider>
   );
 }
 
